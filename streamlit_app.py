@@ -4,14 +4,25 @@ This is a standalone version that works without the FastAPI backend.
 """
 
 import streamlit as st
-import requests
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 import uuid
-import json
-import re
-import pytz
 import random
+
+# Try to import pytz, fallback if not available
+try:
+    import pytz
+except ImportError:
+    # Create a simple timezone class for fallback
+    class SimpleTimezone:
+        def __init__(self, name):
+            self.name = name
+        def localize(self, dt):
+            return dt
+    pytz = type('pytz', (), {'timezone': lambda name: SimpleTimezone(name)})()
+
+# Force standalone mode - no external API calls
+STANDALONE_MODE = True
 
 # Page configuration
 st.set_page_config(
