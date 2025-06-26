@@ -70,24 +70,27 @@ class MockBackend:
             response = "Hello! I'm your AI calendar assistant. I can help you schedule meetings and check your availability. What would you like to do today?"
             session['step'] = 'collecting_info'
 
-        elif intent == 'book_meeting' or (session['step'] == 'collecting_info' and intent != 'general'):
+        elif intent == 'book_meeting':
             response = self._handle_booking_request(session)
             if session.get('available_slots'):
                 session['step'] = 'showing_slots'
 
-        elif intent == 'select_slot' or (session['step'] == 'showing_slots' and intent != 'confirm_booking'):
+        elif session['step'] == 'collecting_info':
+            # We're collecting info - check if we got new date info
+            if extracted_info:  # If we extracted any info from this message
+                response = self._handle_booking_request(session)
+                if session.get('available_slots'):
+                    session['step'] = 'showing_slots'
+            else:
+                response = "I'd be happy to help you schedule a meeting! Could you please tell me your preferred date? For example, you could say 'tomorrow', 'next Friday', or a specific date."
+
+        elif intent == 'select_slot' or session['step'] == 'showing_slots':
             response = self._handle_slot_selection(session, message)
             if session.get('selected_slot'):
                 session['step'] = 'confirming'
 
-        elif intent == 'confirm_booking' or (session['step'] == 'confirming'):
+        elif intent == 'confirm_booking' or session['step'] == 'confirming':
             response = self._handle_confirmation(session, message_lower)
-
-        elif session['step'] == 'collecting_info':
-            # If we're collecting info but didn't get booking intent, try to extract info anyway
-            response = self._handle_booking_request(session)
-            if session.get('available_slots'):
-                session['step'] = 'showing_slots'
 
         else:
             response = "I'm here to help you schedule meetings and manage your calendar. You can ask me to 'schedule a meeting', 'check availability', or 'book an appointment'. How can I assist you today?"
@@ -207,25 +210,33 @@ class MockBackend:
         """Handle slot selection."""
         available_slots = session.get('available_slots', [])
         if not available_slots:
-            return "I don't see any available slots to choose from."
-        
+            return "I don't see any available slots to choose from. Let me help you find some available times first."
+
         message_lower = message.lower()
         selected_index = None
-        
-        if 'first' in message_lower or '1' in message or 'option 1' in message_lower:
+
+        # More flexible slot selection
+        if 'first' in message_lower or '1' in message_lower or 'option 1' in message_lower:
             selected_index = 0
-        elif 'second' in message_lower or '2' in message:
+        elif 'second' in message_lower or '2' in message_lower or 'option 2' in message_lower:
             selected_index = 1
-        elif 'third' in message_lower or '3' in message:
+        elif 'third' in message_lower or '3' in message_lower or 'option 3' in message_lower:
             selected_index = 2
-        elif 'looks good' in message_lower or 'good' in message_lower:
+        elif 'looks good' in message_lower or 'good' in message_lower or 'perfect' in message_lower:
+            # Default to first option if they say it looks good
             selected_index = 0
-        
+
         if selected_index is not None and selected_index < len(available_slots):
             session['selected_slot'] = available_slots[selected_index]
-            return f"Perfect! I'll book the slot on {available_slots[selected_index]['date']} from {available_slots[selected_index]['start_time']} to {available_slots[selected_index]['end_time']}. Should I confirm this booking?"
+            slot = available_slots[selected_index]
+            return f"Perfect! I'll book the slot on {slot['date']} from {slot['start_time']} to {slot['end_time']}. Should I confirm this booking?"
         else:
-            return "I'm not sure which slot you'd like to select. Could you please specify 'option 1', 'option 2', etc.?"
+            # Show the options again
+            response = "I'm not sure which slot you'd like. Here are your options again:\n\n"
+            for i, slot in enumerate(available_slots[:3], 1):
+                response += f"{i}. {slot['start_time']} - {slot['end_time']}\n"
+            response += "\nPlease tell me which number you prefer (1, 2, or 3)."
+            return response
     
     def _handle_confirmation(self, session: Dict, message: str) -> str:
         """Handle booking confirmation."""
