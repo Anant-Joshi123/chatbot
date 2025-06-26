@@ -76,18 +76,20 @@ class MockBackend:
                 session['step'] = 'showing_slots'
 
         elif session['step'] == 'collecting_info':
-            # We're collecting info - check if we got new date info
-            if extracted_info:  # If we extracted any info from this message
-                response = self._handle_booking_request(session)
-                if session.get('available_slots'):
-                    session['step'] = 'showing_slots'
-            else:
-                response = "I'd be happy to help you schedule a meeting! Could you please tell me your preferred date? For example, you could say 'tomorrow', 'next Friday', or a specific date."
+            # We're collecting info - always try to handle booking request
+            response = self._handle_booking_request(session)
+            if session.get('available_slots'):
+                session['step'] = 'showing_slots'
 
         elif intent == 'select_slot' or session['step'] == 'showing_slots':
-            response = self._handle_slot_selection(session, message)
-            if session.get('selected_slot'):
-                session['step'] = 'confirming'
+            if intent == 'confirm_booking' and session.get('selected_slot'):
+                # User is confirming a previously selected slot
+                response = self._handle_confirmation(session, message_lower)
+            else:
+                # User is selecting a slot
+                response = self._handle_slot_selection(session, message)
+                if session.get('selected_slot'):
+                    session['step'] = 'confirming'
 
         elif intent == 'confirm_booking' or session['step'] == 'confirming':
             response = self._handle_confirmation(session, message_lower)
@@ -111,6 +113,7 @@ class MockBackend:
         booking_words = ['schedule', 'book', 'meeting', 'appointment', 'call', 'time', 'available', 'free', 'slot']
         confirmation_words = ['yes', 'confirm', 'ok', 'sure', 'sounds good', 'perfect', 'please']
         selection_words = ['first', 'second', 'third', 'option', '1', '2', '3', 'looks good', 'good', 'that one']
+        date_words = ['tomorrow', 'today', 'friday', 'monday', 'tuesday', 'wednesday', 'thursday', 'saturday', 'sunday', 'next week', 'afternoon', 'morning', 'evening']
 
         # More flexible intent detection
         if any(word in message for word in greeting_words) and len(message.split()) <= 5:
@@ -121,6 +124,8 @@ class MockBackend:
             return 'select_slot'
         elif any(word in message for word in booking_words) or 'want' in message or 'need' in message or 'like' in message:
             return 'book_meeting'
+        elif any(word in message for word in date_words):
+            return 'book_meeting'  # Treat date mentions as booking intent
         else:
             return 'general'
     
