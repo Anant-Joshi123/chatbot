@@ -61,27 +61,37 @@ class MockBackend:
         # Extract information
         extracted_info = self._extract_info(message)
         session['extracted_info'].update(extracted_info)
+
+        # Debug info (can be removed in production)
+        debug_info = f"Intent: {intent}, Step: {session['step']}, Extracted: {extracted_info}"
         
-        # Generate response
+        # Generate response based on intent and current step
         if intent == 'greeting' and session['step'] == 'greeting':
             response = "Hello! I'm your AI calendar assistant. I can help you schedule meetings and check your availability. What would you like to do today?"
             session['step'] = 'collecting_info'
-            
-        elif intent in ['book_meeting', 'check_availability'] or session['step'] == 'collecting_info':
+
+        elif intent == 'book_meeting' or (session['step'] == 'collecting_info' and intent != 'general'):
             response = self._handle_booking_request(session)
             if session.get('available_slots'):
                 session['step'] = 'showing_slots'
-            
-        elif intent == 'select_slot' or session['step'] == 'showing_slots':
+
+        elif intent == 'select_slot' or (session['step'] == 'showing_slots' and intent != 'confirm_booking'):
             response = self._handle_slot_selection(session, message)
             if session.get('selected_slot'):
                 session['step'] = 'confirming'
-            
-        elif intent == 'confirm_booking' or session['step'] == 'confirming':
+
+        elif intent == 'confirm_booking' or (session['step'] == 'confirming'):
             response = self._handle_confirmation(session, message_lower)
-            
+
+        elif session['step'] == 'collecting_info':
+            # If we're collecting info but didn't get booking intent, try to extract info anyway
+            response = self._handle_booking_request(session)
+            if session.get('available_slots'):
+                session['step'] = 'showing_slots'
+
         else:
             response = "I'm here to help you schedule meetings and manage your calendar. You can ask me to 'schedule a meeting', 'check availability', or 'book an appointment'. How can I assist you today?"
+            session['step'] = 'collecting_info'
         
         return {
             "response": response,
@@ -94,18 +104,19 @@ class MockBackend:
     
     def _analyze_intent(self, message: str) -> str:
         """Analyze user intent."""
-        greeting_words = ['hello', 'hi', 'hey', 'good morning', 'good afternoon']
-        booking_words = ['schedule', 'book', 'meeting', 'appointment', 'call', 'time']
-        confirmation_words = ['yes', 'confirm', 'ok', 'sure', 'sounds good', 'perfect']
-        selection_words = ['first', 'second', 'third', 'option', '1', '2', '3', 'looks good']
-        
-        if any(word in message for word in greeting_words) and len(message.split()) <= 3:
+        greeting_words = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'greetings']
+        booking_words = ['schedule', 'book', 'meeting', 'appointment', 'call', 'time', 'available', 'free', 'slot']
+        confirmation_words = ['yes', 'confirm', 'ok', 'sure', 'sounds good', 'perfect', 'please']
+        selection_words = ['first', 'second', 'third', 'option', '1', '2', '3', 'looks good', 'good', 'that one']
+
+        # More flexible intent detection
+        if any(word in message for word in greeting_words) and len(message.split()) <= 5:
             return 'greeting'
-        elif any(word in message for word in confirmation_words):
+        elif any(word in message for word in confirmation_words) and ('book' in message or 'confirm' in message or 'yes' in message):
             return 'confirm_booking'
         elif any(word in message for word in selection_words):
             return 'select_slot'
-        elif any(word in message for word in booking_words):
+        elif any(word in message for word in booking_words) or 'want' in message or 'need' in message or 'like' in message:
             return 'book_meeting'
         else:
             return 'general'
@@ -141,22 +152,31 @@ class MockBackend:
     def _handle_booking_request(self, session: Dict) -> str:
         """Handle booking requests."""
         extracted = session['extracted_info']
-        
+
+        # If no date specified, ask for it
         if not extracted.get('date'):
             return "I'd be happy to help you schedule a meeting! Could you please tell me your preferred date? For example, you could say 'tomorrow', 'next Friday', or a specific date."
-        
+
         # Generate mock available slots
         available_slots = self._generate_mock_slots(extracted.get('date'))
         session['available_slots'] = available_slots
-        
+
         if not available_slots:
             return "I couldn't find any available slots for your requested time. Could you try a different date?"
-        
-        response = "Great! I found some available time slots for you:\n\n"
+
+        # Create a more natural response
+        date_str = extracted.get('date')
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            formatted_date = date_obj.strftime('%A, %B %d')
+        except:
+            formatted_date = date_str
+
+        response = f"Perfect! I found some available time slots for {formatted_date}:\n\n"
         for i, slot in enumerate(available_slots[:3], 1):
-            response += f"{i}. {slot['date']} from {slot['start_time']} to {slot['end_time']}\n"
-        
-        response += "\nWhich option works best for you? You can say 'option 1', 'the first one', or just '1'."
+            response += f"{i}. {slot['start_time']} - {slot['end_time']}\n"
+
+        response += "\nWhich time works best for you? Just let me know the number (1, 2, or 3) or say something like 'the first option looks good'."
         return response
     
     def _generate_mock_slots(self, date_str: str) -> List[Dict]:
